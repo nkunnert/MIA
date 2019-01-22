@@ -13,43 +13,132 @@ const String sfcPassword = "M!@isah2018";
 String authToken = "";
 long tokenSetMillis = 0;
 
+String lastOperation = "";
+
 bool initialized = false;
+
+String inputString = "";
+bool stringComplete = false;
 
 void setup () {
  
-  Serial.begin(9600);
-  WiFi.begin(ssid, password);
- 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting..");
-  }
+  Serial.begin(115200);
+//  WiFi.begin(ssid, password);
+// 
+//  while (WiFi.status() != WL_CONNECTED) {
+//    delay(1000);
+//    Serial.println("Connecting..");
+//  }
  
 }
  
 void loop() {
-  if(!initialized){
-    String potentialToken = getAuthToken();
-    
-    if(!potentialToken.equalsIgnoreCase("")){
-      setAuthToken(potentialToken);
-      initialized = true;
+//  if(!initialized){
+//    String potentialToken = getAuthToken();
+//    
+//    if(!potentialToken.equalsIgnoreCase("")){
+//      setAuthToken(potentialToken);
+//      initialized = true;
+//    }
+//    else {
+//      delay(1000);
+//      return;
+//    }
+//  }
+//
+//  if(!tokenStillValid()){
+//    Serial.println("Auth token is no longer valid, retrieving new token.");
+//    String newToken = getAuthToken();
+//    setAuthToken(newToken);
+//  }
+
+  while (Serial.available()) {
+    String messageBuffer = "";
+    char b = Serial.read();
+    if(b == '\n' && messageBuffer.startsWith("A:")) {
+      String msg = getReturningMessage(messageBuffer);
+      Serial.println(msg);
+      messageBuffer = "";
     }
     else {
-      delay(1000);
-      return;
+      messageBuffer += b;
     }
   }
+}
 
-  if(!tokenStillValid()){
-    Serial.println("Auth token is no longer valid, retrieving new token.");
-    String newToken = getAuthToken();
-    setAuthToken(newToken);
+String getReturningMessage(String message){
+  if(message.startsWith("A:")){
+    if(message.indexOf("New_Operation") > 0){
+      return "ESP: test operation";
+    }
+    else {
+      return "ESP: Command (" + message + ") not supported...";
+    }
   }
+  else {
+    return "ESP: Command (" + message + ") not supported...";
+  }
+}
 
-  getOperationsRaw();
-  //sendIotMessage("TEST", "Test bericht", "50", "Degrees");
-  delay(5000);
+//void serialEvent() {
+//  if(stringComplete == false){
+//    while (Serial.available()) {
+//    char inChar = (char)Serial.read();
+//    inputString += inChar;
+//    
+//      if (inChar == '\n') {
+//        stringComplete = true;
+//        onNewMessageReceived();
+//      }
+//    }
+//  }
+//}
+
+//void onNewMessageReceived(){
+//  if(inputString.startsWith("A: New Operation")){
+//    Serial.println("ESP: Operation = " + lastOperation);
+//    inputString = "";
+//    return;
+//  }
+//  
+//  if(inputString.startsWith("A: Operation Done")){
+//    //Send API message
+//    lastOperation = "";
+//    Serial.println("ESP: Operation has been finished!");
+//    inputString = "";
+//    return;
+//  }
+//
+//  //Example message:
+//  //A: IoT: type=Info, message=Machine Temperature, value=50, unit=degrees,
+//  if(inputString.startsWith("A: IoT:")){
+//    inputString.replace("A: IoT: ", "");
+//    
+//    String type = getRequiredInfoFromInput("type");
+//    String message = getRequiredInfoFromInput("message");
+//    String value = getRequiredInfoFromInput("value");
+//    String unit = getRequiredInfoFromInput("unit");
+//    
+//    //sendIotMessage(type, message, value, unit);
+//    
+//    Serial3.println("ESP: IoT message sent!");
+//    inputString = "";
+//    return;
+//  }
+//}
+
+String getRequiredInfoFromInput(String prefix){
+  if(inputString.indexOf(prefix)>0){
+     int CountChar=prefix.length();
+     int indexStart= inputString.indexOf(prefix);
+     int indexStop= inputString.indexOf(",");
+     String result = inputString.substring(indexStart+CountChar, indexStop);
+
+     result.replace("=", "");
+     
+     return result;
+  }
+  return "";
 }
 
 bool tokenStillValid(){
@@ -92,7 +181,7 @@ String getAuthToken(){
   return "";
 }
 
-String getOperationsRaw(){
+void getOperationRaw(){
   if(WiFi.status()== WL_CONNECTED){
     String payload = "";
     HTTPClient http;
@@ -108,18 +197,11 @@ String getOperationsRaw(){
       payload = http.getString();
       
       String param = xmlTakeParam(payload, "MachineOperation");
-      Serial.println(param);
-      
-//      payload.replace("<MachineOperation>" + param + "</MachineOperation>", "");
-//      param = xmlTakeParam(payload, "MachineOperation");
-//      Serial.println(param);
-      
+      lastOperation = param;
     }
 
     http.end();
   }
-  
-  return "";
 }
 
 void sendIotMessage(String type, String message, String value, String unit){

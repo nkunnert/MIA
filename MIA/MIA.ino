@@ -59,7 +59,7 @@
 
 #define solenoidPin        9
 #define heaterPin          10
-//#define heatSensorPin      A13
+#define heatSensorPin      A13
 
 thermistor tempSensor(A13,0);
 
@@ -105,11 +105,22 @@ enum ForkPosition {
 
 ForkPosition latestPosition = UNKNOWNPOS;
 
+String latestReceivedOperation = "";
+String latestESPMessage = "";
+bool listening = false;
+
+bool targetColorBlue = false;
+bool targetDrawingPlus = false;
+
 void setup() {
     Serial.begin(9600);
-
+    Serial3.begin(115200);
+//    delay(1000);
+//    Serial.println("");
+//    Serial.println("Setup");
+    
     pinMode(heaterPin, OUTPUT);
-    //pinMode(heatSensorPin, INPUT);
+    pinMode(heatSensorPin, INPUT);
     
     pinMode(switchPin, INPUT_PULLUP);
     pinMode(switchPinPusher1, INPUT_PULLUP);
@@ -158,15 +169,43 @@ void loop() {
     }
   }
 
+    while(Serial3.available() && listening){
+      char incomingChar = Serial3.read();
+      if(incomingChar == '\n'){
+        if(latestESPMessage.startsWith("ESP: Operation:") && latestESPMessage.indexOf("Operation") > 0){
+          String msg = "Operation found: = " + latestESPMessage;
+          Serial.println(msg);
+          latestReceivedOperation = latestESPMessage;
+          latestESPMessage = "";
+          listening = false;
+        }
+        else {
+          String msg = "Info: = " + latestESPMessage;
+          Serial.println(msg);
+          latestESPMessage = "";
+        }
+      }
+      else {
+        latestESPMessage += incomingChar;
+      }
+    }
+
   //If MIA is not busy, set new instructions.
   if(isBusy == false){
     //Read from ESP serial port for new operation
-    Serial.println("Waiting for new instructions..");
-    delay(10000);
-    
-    //If the next operations is not "null" it should take the instructions and use them for the new production.
+    if(latestReceivedOperation == ""){
+      Serial3.println("A: New_Operation");
+      Serial.println("Searching for new instructions..");
+      listening = true;
+      delay(1000);
+      return;
+    }
+
+    //If the next operation is not "null" it should take the instructions and use them for the new production.
     amountToProduce = 1;
-    onNewInstructionsFound(true, false);
+    targetColorBlue = (getOperationColor(latestReceivedOperation) == "B");
+    targetDrawingPlus = (getOperationDrawing(latestReceivedOperation) == "X");
+    onNewInstructionsFound(targetColorBlue, targetDrawingPlus);
 
     isBusy = true;
   }
@@ -181,16 +220,74 @@ void loop() {
     resetProductionStats();
 
     //Let the system know that there are no instuctions being processed anymore.
+    latestReceivedOperation = "";
+    Serial3.println("A: Operation Done");
     isBusy = false;
-    
+
     return;
   }
 
   //As long as the amount to produce hasn't been reached, a new block needs to be made.
   if(amountProduced < amountToProduce){
-    makeBlockProduct(true, false);
+    makeBlockProduct(targetColorBlue, targetDrawingPlus);
   }
 }
+
+String getOperationId(String inStr)
+{
+  String needParam = "ID:";
+  if(inStr.indexOf(needParam)>0){
+     int CountChar=needParam.length();
+     int indexStart=inStr.indexOf(needParam);
+     int indexStop= inStr.indexOf("_1_");  
+     String resultParam = inStr.substring(indexStart+CountChar, indexStop);
+
+     return resultParam;
+  }
+  return "not found";
+}
+
+String getOperationColor(String inStr)
+{
+  String needParam = "COLOR:";
+  if(inStr.indexOf(needParam)>0){
+     int CountChar=needParam.length();
+     int indexStart=inStr.indexOf(needParam);
+     int indexStop= inStr.indexOf("_2_");  
+     String resultParam = inStr.substring(indexStart+CountChar, indexStop);
+
+     return resultParam;
+  }
+  return "not found";
+}
+
+String getOperationDrawing(String inStr)
+{
+  String needParam = "DRAWING:";
+  if(inStr.indexOf(needParam)>0){
+     int CountChar=needParam.length();
+     int indexStart=inStr.indexOf(needParam);
+     int indexStop= inStr.indexOf("_3_");  
+     String resultParam = inStr.substring(indexStart+CountChar, indexStop);
+
+     return resultParam;
+  }
+  return "not found";
+}
+
+//String getOperationLineNr(String inStr)
+//{
+//  String needParam = "LINENR:";
+//  if(inStr.indexOf(needParam)>0){
+//     int CountChar=needParam.length();
+//     int indexStart=inStr.indexOf(needParam);
+//     int indexStop= inStr.indexOf("_4_");  
+//     String resultParam = inStr.substring(indexStart+CountChar, indexStop);
+//
+//     return resultParam;
+//  }
+//  return "not found";
+//}
 
 void makeBlockProduct(bool blue, bool drawPlus){
     //Set the global configuration values based on the ones given in the method header.
@@ -254,6 +351,7 @@ void makeBlockProduct(bool blue, bool drawPlus){
       //Set the start time if true.
       if(startTime == 0){
         startTime = millis();
+        Serial.println("");
         Serial.println("Set start time.");
       }
 
@@ -758,11 +856,11 @@ void setEditTime(){
 void onEditEnded(bool success){
   setEditTime();
 
-  Serial3.println("-----------------------------");
-  Serial3.println("Block edit finished.");
-  Serial3.print("Success: "); Serial.println((String)success);
-  Serial3.print("Edit took: "); Serial.print(editTime); Serial.println(" seconds.");
-  Serial3.println("-----------------------------");
+  Serial.println("-----------------------------");
+  Serial.println("Block edit finished.");
+  Serial.print("Success: "); Serial.println((String)success);
+  Serial.print("Edit took: "); Serial.print(editTime); Serial.println(" seconds.");
+  Serial.println("-----------------------------");
 
   sendLinesDrawn();
   
@@ -770,44 +868,53 @@ void onEditEnded(bool success){
 }
 
 void onInstructionsFinished(){
-  Serial3.println("-----------------------------");
-  Serial3.println("Done with current instructions!");
-  Serial3.print("Required amount: "); Serial.println(amountToProduce);
-  Serial3.print("Incorrect produced amount: "); Serial.println(incorrectProduced);
-  Serial3.print("Correct produced amount: "); Serial.println(amountProduced);
-  Serial3.print("Total: "); Serial.println(amountProduced + incorrectProduced);
-  Serial3.println("-----------------------------");
+  Serial.println("-----------------------------");
+  Serial.println("Done with current instructions!");
+  Serial.print("Required amount: "); Serial.println(amountToProduce);
+  Serial.print("Incorrect produced amount: "); Serial.println(incorrectProduced);
+  Serial.print("Correct produced amount: "); Serial.println(amountProduced);
+  Serial.print("Total: "); Serial.println(amountProduced + incorrectProduced);
+  Serial.println("-----------------------------");
 }
 
 void onNewInstructionsFound(bool blue, bool drawPlus){
-  Serial3.println("-----------------------------");
-  Serial3.println("New instructions found!");
-  Serial3.print("Color: "); Serial.println(blue? "blue" : "green");
-  Serial3.print("Drawing: "); Serial.println(drawPlus? "+" : "-");
-  Serial3.print("Amount to produce: "); Serial.println(amountToProduce);
-  Serial3.println("-----------------------------");
+  Serial.println("-----------------------------");
+  Serial.println("New instructions found!");
+  Serial.print("Color: "); Serial.println(blue? "blue" : "green");
+  Serial.print("Drawing: "); Serial.println(drawPlus? "+" : "-");
+  Serial.print("Amount to produce: "); Serial.println(amountToProduce);
+  Serial.println("-----------------------------");
 }
 
 void onStockTooLow(int stockId){
-  Serial3.println("-----------------------------");
-  Serial3.print("ALERT: "); Serial.print(stockId == 1 ? "Green" : "Blue"); Serial.println(" is out of stock!");
-  Serial3.println("-----------------------------");
+  String stockColor = (stockId == 1 ? "Green" : "Blue");
+  String message = "A: IoT:TYPE:Alert_1_MESSAGE:" + stockColor + " out of minimum stock!" + "_2_VALUE:2_3_UNIT:Blocks_4_";
+
+  Serial3.println(message);
+  Serial.println("Stock alert sent");
 }
 
 void sendMotorTemp(){
   double temp = tempSensor.analog2temp();
+  String tempString = String(temp, 2);
   
-  Serial3.println("-----------------------------");
-  Serial3.println("Motor temperature update");
-  Serial3.print("Motor temperature: "); Serial.println(temp);
-  Serial3.println("-----------------------------");
+  String message = "A: IoT:TYPE:Info_1_MESSAGE:Motor temperature_2_VALUE:";
+  message += tempString;
+  message += "_3_UNIT:Degrees Celcius_4_";
+  
+  Serial3.println(message);
+  Serial.println("Updated temperature");
 }
 
 void sendLinesDrawn(){
-  Serial3.println("-----------------------------");
-  Serial3.println("Lines drawn update");
-  Serial3.print("Lines drawn: "); Serial.println(linesDrawn);
-  Serial3.println("-----------------------------");
+  String linesString = String(linesDrawn);
+
+  String message = "A: IoT:TYPE:Info_1_MESSAGE:Lines drawn_2_VALUE:";
+  message += linesDrawn;
+  message += "_3_UNIT:Lines drawn_4_";
+  
+  Serial3.println(message);
+  Serial.println("Updated lines drawn");
   
   linesDrawn = 0;
 }
