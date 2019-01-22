@@ -231,6 +231,7 @@ void loop() {
   if(amountProduced < amountToProduce){
     makeBlockProduct(targetColorBlue, targetDrawingPlus);
   }
+  
 }
 
 String getOperationId(String inStr)
@@ -384,7 +385,7 @@ void makeBlockProduct(bool blue, bool drawPlus){
         return;
       }
 
-      //Check if the stock amount is high enough, if not: send a message to Isah API.
+      //Check if the stock amount is high enough, if not: send a message to IoT API.
       verifyStockAmount(getBlue ? 2 : 1);
 
       //Makes the fork move to first color sensor based on the current position.
@@ -622,8 +623,10 @@ void scanColorAndAct(){
     
     executeScan1();
 
-    bool correctColor = getBlue == true ? (currentG >= 110 && currentG <= 132 && currentR > 140 && currentR <= 160 && currentB >= 62 && currentB <= 75)  
-                          : (currentG <= 112 && currentR > 145);
+    bool correctColor = getBlue == true ? (currentG >= 110 && currentG <= 150 && currentR > 140 && currentR <= 190 && currentB >= 62 && currentB <= 85)  
+                          : (currentG <= 122 && currentR > 145);
+    //(currentG >= 110 && currentG <= 132 && currentR > 140 && currentR <= 160 && currentB >= 62 && currentB <= 75)  
+                         // : (currentG <= 112 && currentR > 145);
 
     if(correctColor){
       blockValid = true;
@@ -888,7 +891,7 @@ void onNewInstructionsFound(bool blue, bool drawPlus){
 
 void onStockTooLow(int stockId){
   String stockColor = (stockId == 1 ? "Green" : "Blue");
-  String message = "A: IoT:TYPE:Alert_1_MESSAGE:" + stockColor + " out of minimum stock!" + "_2_VALUE:2_3_UNIT:Blocks_4_";
+  String message = "A: IoT:TYPE:Info_1_MESSAGE:" + stockColor + " out of minimum stock!" + "_2_VALUE:0_3_UNIT:Dummy_4_";
 
   Serial3.println(message);
   Serial.println("Stock alert sent");
